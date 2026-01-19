@@ -1,0 +1,26 @@
+```python cookie2_samples.py                      # creates `cookie2_samples.npy` and `cookie2_weights.npy` 
+cp cookie2_samples.npy cookie2_CM/samples.npy  # == cookie2_CM/info.json["sampling"]["sample file"]
+cp cookie2_weights.npy cookie2_CM/weights.npy  # == cookie2_CM/info.json["sampling"]["weight file"]
+python run_mc.py cookie2_CM                    # creates `moments.npz` and `samples`
+python dump_stiffness.py cookie2_CM            # creates `stiffness.npz`, `cholesky.npz` and `cholesky_permutation.npz`
+python orthogonalize_samples.py cookie2_CM     # orthogonalizes the created samples
+python weight_samples.py cookie2_CM            # adds weight information to the samples
+python reconstruction.py cookie2_CM/reco_ord15```
+
+(edited)
+trunschk [2:46 PM]
+`python orthogonalize_samplles.py cookie2_CM` operiert auf jedem File in `cookie2_CM/samples`.
+Diese Files enthalten (mehr oder weniger) dict's von samples:
+
+```>>> z = np.load('cookie2_CM/samples/0.npz')
+>>> list(z.keys())
+['ys', 'us']
+>>> z['ys'].shape
+(2000, stochastic_dimension)
+>>> z['us'].shape
+(2000, physical_dimension)```
+
+`2000` is die `batch size`, die auch in `cookie2_CM/info.json` angegeben ist.
+Das Script fügt einfach ein neues Feld `nus` hinzu, welches die die orthogonalisierten `us` enthält.
+`weight_samples.py` fügt ein Feld `w` hinzu, dass die Gewichte enthält.
+

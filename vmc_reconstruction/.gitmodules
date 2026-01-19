@@ -1,0 +1,3 @@
+[submodule "qmc"]
+	path = qmc
+	url = git@bitbucket.org:trunschk/qmc.git

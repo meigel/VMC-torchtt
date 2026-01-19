@@ -1,0 +1,14 @@
+colorama==0.3.9
+dijitso==2017.1.0
+FFC==2017.1.0
+FIAT==2017.1.0
+matplotlib==2.0.2
+moola==0.1
+numpy==1.13.1
+petsc4py==3.7.0
+scikits.sparse==0.2
+scipy==0.19.1
+slepc4py==3.7.0
+sympy==0.7.6.1
+tabulate==0.8.2
+h5py

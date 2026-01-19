@@ -1,0 +1,9 @@
+{
+    "sample path": "../reco/results/convection/decay/mc_tame",
+    "reference path": "../reco/results/convection/decay/qmc_tame",
+    "maximum sample size": 100000,
+    "tolerance": 1e-8,
+    "maximum iterations": 10000,
+    "basis dimension": 7,
+    "orthogonalization": true
+}

@@ -1,0 +1,11 @@
+*.prof
+*.pyc
+*.sw[p,o]
+notes
+*.npz
+*.log
+*.h5
+*.xrs
+*.msh
+*.geo
+*.tar.gz

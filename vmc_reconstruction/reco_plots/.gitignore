@@ -1,0 +1,12 @@
+*.png
+reco_convection
+reco_convection_ord15
+reco_cookie1
+reco_cookie2
+reco_darcy
+reco_nonlinear
+reco_nonlinear_decay
+reco_nonlinear_decay_ord15
+reco_nonlinear_decay_ord15_rk150
+reco_nonlinear_new
+*.npy

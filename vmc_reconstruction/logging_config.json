@@ -1,0 +1,16 @@
+{
+    "version": 1,
+    "formatters": {
+        "f": {"format": "%(asctime)s %(name)-12s %(levelname)-8s %(message)s"}
+    },
+    "handlers": {
+        "h": {"class": "coloredLogging.ColoredStreamHandler",
+              "formatter": "f",
+              "level": 30
+        }
+    },
+    "root": {
+        "handlers": ["h"],
+        "level": 10
+    }
+}

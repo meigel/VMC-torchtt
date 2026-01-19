@@ -1,0 +1,20 @@
+{
+    "problem": {"name": "darcy"},
+    "fe": {
+        "degree": 1,
+        "mesh size": 50
+    },
+    "expansion": {
+        "mean": 1.0,
+        "scale": 12.5,
+        "size": 20,
+        "decay rate": 2.0
+    },
+    "sampling": {
+        "distribution": "uniform",
+        "strategy": "sobol",
+        "batch size": 2000,
+        "levels": 9,
+        "dump limit": 100000
+    }
+}

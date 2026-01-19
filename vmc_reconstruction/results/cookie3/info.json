@@ -1,0 +1,19 @@
+{
+    "problem": {
+        "name": "cookie3",
+        "subdomains per axis": 4,
+        "kappa": 1.0
+    },
+    "fe": {
+        "degree": 1,
+        "mesh size": 150
+    },
+    "expansion": {"size": 32},
+    "sampling": {
+        "distribution": "uniform",
+        "strategy": "sobol",
+        "batch size": 2000,
+        "levels": 9,
+        "dump limit": 100000
+    }
+}
