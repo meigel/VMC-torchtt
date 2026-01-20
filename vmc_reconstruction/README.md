@@ -1,3 +1,13 @@
+# UQ-ADF (TorchTT)
+The Python UQ-ADF reimplementation lives in `vmc_reconstruction/uq_adf_torchtt.py`
+and is exercised by the tests/examples in the repo root.
+
+- Run the Darcy example (with convergence plots):
+  - `./venv/bin/python examples/uq_adf_darcy_2d.py`
+  - Fast mode: `./venv/bin/python examples/uq_adf_darcy_2d.py --fast`
+- Run tests:
+  - `./venv/bin/python -m pytest -q tests`
+
 #NOTES
 - cookie4/ord7_ortho/info.json ist nicht ord7, sondern ord13
 - a bug of openblas results in deadlocks in parallel execution using multiprocessing

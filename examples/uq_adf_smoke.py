@@ -68,7 +68,7 @@ def main():
     for y, u in zip(ys, us):
         meas.add(y, u)
 
-    reco = uq.uq_ra_adf(meas, basis, dims, targeteps=1e-6, maxitr=200, device=device)
+    reco = uq.uq_ra_adf(meas, basis, dims, targeteps=1e-6, maxitr=200, device=device, orthonormal=False)
     reco_cores = [c.detach().cpu().numpy() for c in reco.cores]
 
     test_ys = np.random.uniform(-1.0, 1.0, size=(n_test, n_vars))

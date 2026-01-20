@@ -77,11 +77,21 @@ def _legendre_matrix(x, degree):
     return out
 
 
-def _basis_matrix(x, degree, basis):
+def _basis_matrix(x, degree, basis, orthonormal):
     if basis == PolynomBasis.Hermite:
-        return _hermite_matrix(x, degree)
+        mat = _hermite_matrix(x, degree)
+        if orthonormal and degree > 0:
+            n = torch.arange(degree, dtype=x.dtype, device=x.device)
+            scale = torch.exp(-0.5 * torch.lgamma(n + 1.0))
+            mat = mat * scale
+        return mat
     if basis == PolynomBasis.Legendre:
-        return _legendre_matrix(x, degree)
+        mat = _legendre_matrix(x, degree)
+        if orthonormal and degree > 0:
+            n = torch.arange(degree, dtype=x.dtype, device=x.device)
+            scale = torch.sqrt((2.0 * n + 1.0) / 2.0)
+            mat = mat * scale
+        return mat
     raise ValueError("Unknown basis '{}'".format(basis))
 
 
@@ -253,6 +263,93 @@ def _calc_norm_a_projgrad(delta, core_pos, positions, right_stack, left_is_stack
     return torch.sqrt(norm)
 
 
+def _als_update_core0(core0, right_stack, solutions, reg):
+    n_samples = len(solutions)
+    if n_samples == 0:
+        return core0
+    mode = core0.shape[1]
+    r1 = core0.shape[2]
+    rmat = torch.stack(right_stack[1], dim=1)
+    smat = torch.stack(solutions, dim=1)
+    rrt = rmat @ rmat.transpose(0, 1)
+    if reg and reg > 0.0:
+        rrt = rrt + reg * torch.eye(r1, dtype=core0.dtype, device=core0.device)
+    core0_2d = torch.linalg.solve(rrt, (smat @ rmat.transpose(0, 1)).transpose(0, 1)).transpose(0, 1)
+    return core0_2d.reshape(1, mode, r1)
+
+
+def _als_update_core(core_pos, cores, positions, right_stack, left_mats, solutions,
+                     reg, cg_maxit, cg_tol):
+    n_samples = len(solutions)
+    core = cores[core_pos]
+    r_left, mode, r_right = core.shape
+    if n_samples == 0:
+        return core
+
+    b_list = []
+    l_list = []
+    lt_list = []
+    rhs = torch.zeros((r_left, mode * r_right), dtype=core.dtype, device=core.device)
+
+    for j in range(n_samples):
+        p = positions[core_pos][j]
+        if core_pos < len(cores) - 1:
+            rvec = right_stack[core_pos + 1][j]
+        else:
+            rvec = torch.ones((1,), dtype=core.dtype, device=core.device)
+        b_j = torch.outer(p, rvec).reshape(-1)
+        l_j = left_mats[j]
+        lt_j = l_j.transpose(0, 1)
+        rhs += torch.outer(lt_j @ solutions[j], b_j)
+        b_list.append(b_j)
+        l_list.append(l_j)
+        lt_list.append(lt_j)
+
+    def matvec(gvec):
+        g2d = gvec.reshape(r_left, mode * r_right)
+        out = torch.zeros_like(g2d)
+        for j in range(n_samples):
+            v = g2d @ b_list[j]
+            w = l_list[j] @ v
+            out += torch.outer(lt_list[j] @ w, b_list[j])
+        if reg and reg > 0.0:
+            out = out + reg * g2d
+        return out.reshape(-1)
+
+    x = core.reshape(r_left, mode * r_right).reshape(-1)
+    bvec = rhs.reshape(-1)
+    r = bvec - matvec(x)
+    p = r.clone()
+    rs_old = torch.dot(r, r)
+    rs0 = rs_old.clone()
+    tol = float(cg_tol) if cg_tol is not None else 0.0
+
+    for _ in range(int(cg_maxit)):
+        ap = matvec(p)
+        denom = torch.dot(p, ap)
+        if denom.item() == 0.0:
+            break
+        alpha = rs_old / denom
+        x = x + alpha * p
+        r = r - alpha * ap
+        rs_new = torch.dot(r, r)
+        if tol > 0.0 and rs_new <= (tol * tol) * rs0:
+            break
+        p = r + (rs_new / rs_old) * p
+        rs_old = rs_new
+
+    return x.reshape(r_left, mode, r_right)
+
+
+def _update_left_mats(left_mats, core, positions, core_pos):
+    core_sh = core.permute(1, 0, 2)
+    for j in range(len(left_mats)):
+        p = positions[core_pos][j]
+        tmp = torch.tensordot(p, core_sh, dims=([0], [0]))
+        left_mats[j] = left_mats[j] @ tmp
+    return left_mats
+
+
 def _prepare_measurements(measurements, device, dtype):
     random_vectors = np.asarray(measurements.randomVectors, dtype=float)
     if random_vectors.ndim != 2:
@@ -268,13 +365,13 @@ def _prepare_measurements(measurements, device, dtype):
     return rnd, solutions
 
 
-def _build_positions(random_vectors, dimensions, basis):
+def _build_positions(random_vectors, dimensions, basis, orthonormal):
     d = len(dimensions)
     n_samples = random_vectors.shape[0]
     positions = [None] * d
     for core_pos in range(1, d):
         rv = random_vectors[:, core_pos - 1]
-        positions[core_pos] = _basis_matrix(rv, dimensions[core_pos], basis)
+        positions[core_pos] = _basis_matrix(rv, dimensions[core_pos], basis, orthonormal)
         if positions[core_pos].shape != (n_samples, dimensions[core_pos]):
             raise RuntimeError('Invalid basis matrix shape')
     return positions
@@ -372,13 +469,18 @@ def _initial_guess_with_linear_terms(measurements, dimensions, dtype, device):
 
 def uq_adf(measurements, dimensions, basis, targeteps=1e-8, maxitr=1000, device=None,
            dtype=torch.float64, init_rank=1, init_noise=1e-3, adapt_rank=False,
-           rank_increase=2, rank_every=10, rank_noise=1e-3, rank_max=None):
+           rank_increase=2, rank_every=10, rank_noise=1e-3, rank_max=None,
+           rank_window=10, update_rule="gradient", als_reg=1e-8,
+           als_cg_maxit=20, als_cg_tol=1e-6, orthonormal=False, callback=None):
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     basis = _normalize_basis(basis)
+    update_rule = str(update_rule).lower()
+    if update_rule not in ("gradient", "als"):
+        raise ValueError("Unknown update_rule '{}'".format(update_rule))
     random_vectors, solutions = _prepare_measurements(measurements, device, dtype)
-    positions = _build_positions(random_vectors, dimensions, basis)
+    positions = _build_positions(random_vectors, dimensions, basis, orthonormal)
 
     if measurements.initialRandomVectors:
         cores = _initial_guess_with_linear_terms(measurements, dimensions, dtype, device)
@@ -387,9 +489,10 @@ def uq_adf(measurements, dimensions, basis, targeteps=1e-8, maxitr=1000, device=
     cores = _add_rank_noise(cores, dimensions, init_rank, init_noise, dtype, device)
 
     solutions_norm = torch.sqrt(torch.sum(torch.stack([torch.sum(s * s) for s in solutions])))
-    residuals = [1000.0] * 10
+    rank_window = max(1, int(rank_window))
+    residuals = [1000.0] * rank_window
     last_rank_update = 0
-    rank_window = 10
+    n_samples = len(solutions)
 
     iteration = 0
     while maxitr == 0 or iteration < maxitr:
@@ -398,14 +501,17 @@ def uq_adf(measurements, dimensions, basis, targeteps=1e-8, maxitr=1000, device=
         cores, _ = rl_orthogonal(cores, ranks, False)
 
         right_stack = _calc_right_stack(cores, positions)
-        left_is_stack = [None] * len(cores)
-        left_ought_stack = [None] * len(cores)
+        left_is_stack = [None] * len(cores) if update_rule == "gradient" else None
+        left_ought_stack = [None] * len(cores) if update_rule == "gradient" else None
+        left_mats = None
         rank_updated = False
 
         for core_pos in range(len(cores)):
             if core_pos == 0:
                 residual = _calc_residual_norm(cores[0], right_stack, solutions)
                 rel_res = residual / solutions_norm
+                if callback is not None:
+                    callback(iteration, float(rel_res), cores, ranks)
                 if targeteps and rel_res <= targeteps:
                     return torchtt.TT(cores)
                 residuals.append(rel_res.item())
@@ -426,6 +532,27 @@ def uq_adf(measurements, dimensions, basis, targeteps=1e-8, maxitr=1000, device=
                             return torchtt.TT(cores)
                     elif stagnation and not adapt_rank:
                         return torchtt.TT(cores)
+
+            if update_rule == "als":
+                if core_pos == 0:
+                    cores[0] = _als_update_core0(cores[0], right_stack, solutions, als_reg)
+                    core0_2d = cores[0].reshape(cores[0].shape[1], cores[0].shape[2])
+                    left_mats = [core0_2d] * n_samples
+                else:
+                    cores[core_pos] = _als_update_core(
+                        core_pos,
+                        cores,
+                        positions,
+                        right_stack,
+                        left_mats,
+                        solutions,
+                        als_reg,
+                        als_cg_maxit,
+                        als_cg_tol,
+                    )
+                if core_pos > 0 and core_pos + 1 < len(cores):
+                    left_mats = _update_left_mats(left_mats, cores[core_pos], positions, core_pos)
+                continue
 
             delta = _calc_delta(core_pos, cores, positions, solutions, right_stack, left_is_stack, left_ought_stack)
             norm_a_proj = _calc_norm_a_projgrad(delta, core_pos, positions, right_stack, left_is_stack)
@@ -456,7 +583,9 @@ def uq_adf(measurements, dimensions, basis, targeteps=1e-8, maxitr=1000, device=
 
 def uq_ra_adf(measurements, basis, dimensions, targeteps=1e-8, maxitr=1000, device=None,
               dtype=torch.float64, init_rank=1, init_noise=1e-3, adapt_rank=False,
-              rank_increase=2, rank_every=10, rank_noise=1e-3, rank_max=None):
+              rank_increase=2, rank_every=10, rank_noise=1e-3, rank_max=None,
+              rank_window=10, update_rule="gradient", als_reg=1e-8,
+              als_cg_maxit=20, als_cg_tol=1e-6, orthonormal=False, callback=None):
     return uq_adf(
         measurements,
         dimensions,
@@ -472,4 +601,11 @@ def uq_ra_adf(measurements, basis, dimensions, targeteps=1e-8, maxitr=1000, devi
         rank_every=rank_every,
         rank_noise=rank_noise,
         rank_max=rank_max,
+        rank_window=rank_window,
+        update_rule=update_rule,
+        als_reg=als_reg,
+        als_cg_maxit=als_cg_maxit,
+        als_cg_tol=als_cg_tol,
+        orthonormal=orthonormal,
+        callback=callback,
     )

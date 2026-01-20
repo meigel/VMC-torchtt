@@ -5,8 +5,15 @@ import torch
 from vmc_reconstruction import uq_adf_torchtt as uq
 
 
+ORTHONORMAL = False
+
+
 def _legendre_vals(x, degree):
-    return np.array([np.polynomial.legendre.legval(x, [0] * k + [1]) for k in range(degree)], dtype=float)
+    vals = np.array([np.polynomial.legendre.legval(x, [0] * k + [1]) for k in range(degree)], dtype=float)
+    if ORTHONORMAL and degree > 0:
+        scale = np.sqrt((2.0 * np.arange(degree) + 1.0) / 2.0)
+        vals = vals * scale
+    return vals
 
 
 def _eval_tt(cores, y):
@@ -19,6 +26,33 @@ def _eval_tt(cores, y):
     return np.squeeze(val)
 
 
+def _assemble_l2_h1(basis):
+    from skfem import BilinearForm
+    from skfem.helpers import dot, grad
+
+    @BilinearForm
+    def mass(u, v, w):
+        return u * v
+
+    @BilinearForm
+    def stiff(u, v, w):
+        return dot(grad(u), grad(v))
+
+    m = mass.assemble(basis)
+    k = stiff.assemble(basis)
+    return m, k
+
+
+def _relative_l2_h1(err, ref, m, k):
+    err = np.asarray(err, dtype=float)
+    ref = np.asarray(ref, dtype=float)
+    l2_num = float(err @ (m @ err))
+    l2_den = float(ref @ (m @ ref))
+    h1_num = float(err @ ((m + k) @ err))
+    h1_den = float(ref @ ((m + k) @ ref))
+    return np.sqrt(l2_num / l2_den), np.sqrt(h1_num / h1_den)
+
+
 def test_uq_adf_darcy_log_normal_skfem():
     skfem = pytest.importorskip("skfem")
     pytest.importorskip("scipy")
@@ -29,7 +63,7 @@ def test_uq_adf_darcy_log_normal_skfem():
     torch.manual_seed(0)
     rng = np.random.default_rng(0)
 
-    n = 9
+    n = 41
     mesh = MeshQuad.init_tensor(np.linspace(0, 1, n), np.linspace(0, 1, n))
     mesh = mesh.with_boundaries(
         {
@@ -43,7 +77,21 @@ def test_uq_adf_darcy_log_normal_skfem():
     basis = InteriorBasis(mesh, ElementQuad1(), intorder=3)
     D = basis.get_dofs(list(mesh.boundaries.keys()))
 
-    M = 3
+    n_fine = 41
+    mesh_fine = MeshQuad.init_tensor(np.linspace(0, 1, n_fine), np.linspace(0, 1, n_fine))
+    mesh_fine = mesh_fine.with_boundaries(
+        {
+            "left": lambda x: x[0] == 0.0,
+            "right": lambda x: x[0] == 1.0,
+            "bottom": lambda x: x[1] == 0.0,
+            "top": lambda x: x[1] == 1.0,
+        }
+    )
+    basis_fine = InteriorBasis(mesh_fine, ElementQuad1(), intorder=3)
+    D_fine = basis_fine.get_dofs(list(mesh_fine.boundaries.keys()))
+    m_fine, k_fine = _assemble_l2_h1(basis_fine)
+
+    M = 5
     ks = np.arange(1, M + 1)
     lambdas = 1.0 / (ks**2)
     sigma = 0.1
@@ -52,7 +100,7 @@ def test_uq_adf_darcy_log_normal_skfem():
     def load(v, w):
         return 1.0 * v
 
-    def solve_sample(yvec):
+    def solve_sample(yvec, basis_local, dofs):
         @BilinearForm
         def laplace(u, v, w):
             x, ycoord = w.x
@@ -67,17 +115,17 @@ def test_uq_adf_darcy_log_normal_skfem():
             a = np.exp(sigma * coeff)
             return a * dot(grad(u), grad(v))
 
-        A = laplace.assemble(basis)
-        b = load.assemble(basis)
-        return solve(*condense(A, b, D=D))
+        A = laplace.assemble(basis_local)
+        b = load.assemble(basis_local)
+        return solve(*condense(A, b, D=dofs))
 
-    Ns = 200
-    poly_dim = 5
+    Ns = 300
+    poly_dim = 7
     meas = uq.UQMeasurementSet()
     train = []
     for _ in range(Ns):
         yvec = rng.uniform(-1.0, 1.0, size=M)
-        u = solve_sample(yvec)
+        u = solve_sample(yvec, basis, D)
         meas.add(yvec, u)
         train.append((yvec, u))
 
@@ -86,17 +134,22 @@ def test_uq_adf_darcy_log_normal_skfem():
         meas,
         uq.PolynomBasis.Legendre,
         dimensions,
-        targeteps=1e-6,
-        maxitr=400,
+        targeteps=1e-7,
+        maxitr=300,
         device=torch.device("cpu"),
         dtype=torch.float64,
-        init_rank=2,
+        init_rank=6,
         init_noise=1e-2,
         adapt_rank=True,
-        rank_increase=2,
+        rank_increase=4,
         rank_every=10,
         rank_noise=1e-2,
-        rank_max=20,
+        rank_max=80,
+        update_rule="als",
+        als_reg=1e-8,
+        als_cg_maxit=20,
+        als_cg_tol=1e-6,
+        orthonormal=ORTHONORMAL,
     )
 
     cores = [c.detach().cpu().numpy() for c in tt.cores]
@@ -106,11 +159,21 @@ def test_uq_adf_darcy_log_normal_skfem():
         train_errs.append(np.linalg.norm(pred - ref) / np.linalg.norm(ref))
 
     eval_errs = []
-    for _ in range(5):
+    l2_errs = []
+    h1_errs = []
+    for _ in range(3):
         yvec = rng.uniform(-1.0, 1.0, size=M)
-        ref = solve_sample(yvec)
+        ref = solve_sample(yvec, basis, D)
         pred = _eval_tt(cores, yvec)
         eval_errs.append(np.linalg.norm(pred - ref) / np.linalg.norm(ref))
 
+        ref_fine = solve_sample(yvec, basis_fine, D_fine)
+        pred_fine = basis.interpolator(pred)(mesh_fine.p)
+        l2, h1 = _relative_l2_h1(pred_fine - ref_fine, ref_fine, m_fine, k_fine)
+        l2_errs.append(l2)
+        h1_errs.append(h1)
+
     assert float(np.mean(train_errs)) < 1e-3
     assert float(np.mean(eval_errs)) < 1e-2
+    assert float(np.mean(l2_errs)) < 1e-3
+    assert float(np.mean(h1_errs)) < 5e-2

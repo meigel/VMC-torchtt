@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import torch
 import numpy.polynomial.legendre as leg
@@ -5,8 +6,15 @@ import numpy.polynomial.legendre as leg
 from vmc_reconstruction import uq_adf_torchtt as uq
 
 
+ORTHONORMAL = False
+
+
 def _legendre_basis_vals(x, degree):
-    return np.array([leg.legval(x, [0] * k + [1]) for k in range(degree)], dtype=float)
+    vals = np.array([leg.legval(x, [0] * k + [1]) for k in range(degree)], dtype=float)
+    if ORTHONORMAL and degree > 0:
+        scale = np.sqrt((2.0 * np.arange(degree) + 1.0) / 2.0)
+        vals = vals * scale
+    return vals
 
 
 def _hermite_basis_vals(x, degree):
@@ -15,10 +23,17 @@ def _hermite_basis_vals(x, degree):
         return vals
     vals[0] = 1.0
     if degree == 1:
+        vals[1] = x
+        if ORTHONORMAL:
+            scale = np.array([1.0, 1.0], dtype=float)
+            vals = vals * scale
         return vals
     vals[1] = x
     for n in range(1, degree - 1):
         vals[n + 1] = x * vals[n] - float(n) * vals[n - 1]
+    if ORTHONORMAL:
+        scale = np.array([1.0 / math.sqrt(math.factorial(k)) for k in range(degree)], dtype=float)
+        vals = vals * scale
     return vals
 
 
@@ -65,6 +80,7 @@ def test_uq_adf_constant_legendre():
         maxitr=200,
         device=torch.device("cpu"),
         dtype=torch.float64,
+        orthonormal=ORTHONORMAL,
     )
 
     cores = [c.detach().cpu().numpy() for c in res.cores]
@@ -98,6 +114,7 @@ def test_uq_adf_linear_legendre():
         maxitr=200,
         device=torch.device("cpu"),
         dtype=torch.float64,
+        orthonormal=ORTHONORMAL,
     )
 
     cores = [c.detach().cpu().numpy() for c in res.cores]
@@ -133,6 +150,7 @@ def test_uq_adf_linear_hermite():
         maxitr=200,
         device=torch.device("cpu"),
         dtype=torch.float64,
+        orthonormal=ORTHONORMAL,
     )
 
     cores = [c.detach().cpu().numpy() for c in res.cores]
@@ -174,6 +192,7 @@ def test_uq_adf_noisy_measurements():
         maxitr=250,
         device=torch.device("cpu"),
         dtype=torch.float64,
+        orthonormal=ORTHONORMAL,
     )
 
     cores = [c.detach().cpu().numpy() for c in res.cores]
