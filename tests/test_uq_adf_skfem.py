@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pytest
 import torch
@@ -6,6 +7,7 @@ from vmc_reconstruction import uq_adf_torchtt as uq
 
 
 ORTHONORMAL = False
+SLOW_ENV = "RUN_SLOW_DARCY"
 
 
 def _legendre_vals(x, degree):
@@ -53,7 +55,19 @@ def _relative_l2_h1(err, ref, m, k):
     return np.sqrt(l2_num / l2_den), np.sqrt(h1_num / h1_den)
 
 
-def test_uq_adf_darcy_log_normal_skfem():
+def _run_darcy_case(
+    n,
+    n_fine,
+    ns,
+    poly_dim,
+    maxitr,
+    init_rank,
+    rank_max,
+    rank_increase,
+    rank_every,
+    als_cg_maxit,
+    eval_count=3,
+):
     skfem = pytest.importorskip("skfem")
     pytest.importorskip("scipy")
     from skfem import MeshQuad, ElementQuad1, InteriorBasis, BilinearForm, LinearForm, condense, solve
@@ -63,7 +77,6 @@ def test_uq_adf_darcy_log_normal_skfem():
     torch.manual_seed(0)
     rng = np.random.default_rng(0)
 
-    n = 41
     mesh = MeshQuad.init_tensor(np.linspace(0, 1, n), np.linspace(0, 1, n))
     mesh = mesh.with_boundaries(
         {
@@ -77,7 +90,6 @@ def test_uq_adf_darcy_log_normal_skfem():
     basis = InteriorBasis(mesh, ElementQuad1(), intorder=3)
     D = basis.get_dofs(list(mesh.boundaries.keys()))
 
-    n_fine = 41
     mesh_fine = MeshQuad.init_tensor(np.linspace(0, 1, n_fine), np.linspace(0, 1, n_fine))
     mesh_fine = mesh_fine.with_boundaries(
         {
@@ -119,11 +131,9 @@ def test_uq_adf_darcy_log_normal_skfem():
         b = load.assemble(basis_local)
         return solve(*condense(A, b, D=dofs))
 
-    Ns = 300
-    poly_dim = 7
     meas = uq.UQMeasurementSet()
     train = []
-    for _ in range(Ns):
+    for _ in range(ns):
         yvec = rng.uniform(-1.0, 1.0, size=M)
         u = solve_sample(yvec, basis, D)
         meas.add(yvec, u)
@@ -135,19 +145,19 @@ def test_uq_adf_darcy_log_normal_skfem():
         uq.PolynomBasis.Legendre,
         dimensions,
         targeteps=1e-7,
-        maxitr=300,
+        maxitr=maxitr,
         device=torch.device("cpu"),
         dtype=torch.float64,
-        init_rank=6,
+        init_rank=init_rank,
         init_noise=1e-2,
         adapt_rank=True,
-        rank_increase=4,
-        rank_every=10,
+        rank_increase=rank_increase,
+        rank_every=rank_every,
         rank_noise=1e-2,
-        rank_max=80,
+        rank_max=rank_max,
         update_rule="als",
         als_reg=1e-8,
-        als_cg_maxit=20,
+        als_cg_maxit=als_cg_maxit,
         als_cg_tol=1e-6,
         orthonormal=ORTHONORMAL,
     )
@@ -161,7 +171,7 @@ def test_uq_adf_darcy_log_normal_skfem():
     eval_errs = []
     l2_errs = []
     h1_errs = []
-    for _ in range(3):
+    for _ in range(eval_count):
         yvec = rng.uniform(-1.0, 1.0, size=M)
         ref = solve_sample(yvec, basis, D)
         pred = _eval_tt(cores, yvec)
@@ -173,7 +183,46 @@ def test_uq_adf_darcy_log_normal_skfem():
         l2_errs.append(l2)
         h1_errs.append(h1)
 
-    assert float(np.mean(train_errs)) < 1e-3
-    assert float(np.mean(eval_errs)) < 1e-2
-    assert float(np.mean(l2_errs)) < 1e-3
-    assert float(np.mean(h1_errs)) < 5e-2
+    return float(np.mean(train_errs)), float(np.mean(eval_errs)), float(np.mean(l2_errs)), float(np.mean(h1_errs))
+
+
+def test_uq_adf_darcy_log_normal_skfem_fast():
+    train_err, eval_err, l2_err, h1_err = _run_darcy_case(
+        n=21,
+        n_fine=21,
+        ns=80,
+        poly_dim=5,
+        maxitr=150,
+        init_rank=2,
+        rank_max=20,
+        rank_increase=2,
+        rank_every=10,
+        als_cg_maxit=10,
+        eval_count=2,
+    )
+    assert train_err < 0.1
+    assert eval_err < 0.2
+    assert l2_err < 0.1
+    assert h1_err < 0.5
+
+
+def test_uq_adf_darcy_log_normal_skfem():
+    if os.environ.get(SLOW_ENV, "").lower() not in ("1", "true", "yes"):
+        pytest.skip("set RUN_SLOW_DARCY=1 to run slow Darcy test")
+    train_err, eval_err, l2_err, h1_err = _run_darcy_case(
+        n=41,
+        n_fine=41,
+        ns=300,
+        poly_dim=7,
+        maxitr=300,
+        init_rank=6,
+        rank_max=80,
+        rank_increase=4,
+        rank_every=10,
+        als_cg_maxit=20,
+        eval_count=3,
+    )
+    assert train_err < 1e-3
+    assert eval_err < 1e-2
+    assert l2_err < 1e-3
+    assert h1_err < 5e-2

@@ -25,5 +25,6 @@ Plots are written to `examples/plots/` (gitignored).
 ## Tests
 - `./venv/bin/python -m pytest -q tests`
 
-Note: `tests/test_uq_adf_skfem.py` is intentionally slow because it solves a
-fine-mesh Darcy reference problem.
+Note: `tests/test_uq_adf_skfem.py` includes a fast default test and a slow
+fine-mesh Darcy reference test. Run the slow variant with
+`RUN_SLOW_DARCY=1 ./venv/bin/python -m pytest -q tests/test_uq_adf_skfem.py`.

@@ -7,6 +7,7 @@ and is exercised by the tests/examples in the repo root.
   - Fast mode: `./venv/bin/python examples/uq_adf_darcy_2d.py --fast`
 - Run tests:
   - `./venv/bin/python -m pytest -q tests`
+  - Slow Darcy reference: `RUN_SLOW_DARCY=1 ./venv/bin/python -m pytest -q tests/test_uq_adf_skfem.py`
 
 #NOTES
 - cookie4/ord7_ortho/info.json ist nicht ord7, sondern ord13

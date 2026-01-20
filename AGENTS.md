@@ -33,7 +33,8 @@
 
 ## Testing Guidelines
 - Run unit tests with `./venv/bin/python -m pytest -q tests`.
-- `tests/test_uq_adf_skfem.py` is intentionally slow (fine-mesh Darcy reference).
+- `tests/test_uq_adf_skfem.py` defaults to a lightweight test; run the slow
+  fine-mesh Darcy reference with `RUN_SLOW_DARCY=1 ./venv/bin/python -m pytest -q tests/test_uq_adf_skfem.py`.
 - Validate legacy pipelines with `run_mc.py`, `dump_stiffness.py`, and `reco.py`.
 - `vmc_reconstruction/test_series/reconstruction.py` runs reconstruction sweeps against folders in `vmc_reconstruction/test_series/*/`.
 
