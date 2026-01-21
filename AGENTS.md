@@ -11,8 +11,6 @@
   - `vmc_reconstruction/field/`: field/basis helpers.
   - `vmc_reconstruction/mesh/`: mesh inputs (`*.xml`) and mesh-specific requirements.
   - `vmc_reconstruction/convert/`: conversion utilities to Xerus-format files.
-  - `vmc_reconstruction/plot/` and `vmc_reconstruction/reco_plots/`: plotting utilities and C++ plotting helpers.
-  - `vmc_reconstruction/results/`, `vmc_reconstruction/plots/`: generated outputs and experiment artifacts.
   - `vmc_reconstruction/test_series/`: scripted reconstruction sweeps and example configurations.
 
 ## Build, Test, and Development Commands
@@ -35,6 +33,7 @@
 - Run unit tests with `./venv/bin/python -m pytest -q tests`.
 - `tests/test_uq_adf_skfem.py` defaults to a lightweight test; run the slow
   fine-mesh Darcy reference with `RUN_SLOW_DARCY=1 ./venv/bin/python -m pytest -q tests/test_uq_adf_skfem.py`.
+- `tests/test_torchtt_algorithms.py` exercises AMEn, DMRG, cross approximation, and QTT round-trip.
 - Validate legacy pipelines with `run_mc.py`, `dump_stiffness.py`, and `reco.py`.
 - `vmc_reconstruction/test_series/reconstruction.py` runs reconstruction sweeps against folders in `vmc_reconstruction/test_series/*/`.
 
@@ -43,5 +42,5 @@
 - PRs should describe the experiment/config change, mention updated `info.json` keys, and attach key plots or summary stats.
 
 ## Configuration & Data Notes
-- Output folders (`results/`, `plots/`) can be large; document when regenerating them.
+- Generated outputs should live outside the repo or under ignored folders (e.g., `examples/plots/`).
 - For parallel runs, control thread count (e.g., `OMP_NUM_THREADS=1`) to avoid oversubscription.

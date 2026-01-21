@@ -1,6 +1,7 @@
 # UQ-ADF (TorchTT)
 The Python UQ-ADF reimplementation lives in `vmc_reconstruction/uq_adf_torchtt.py`
 and is exercised by the tests/examples in the repo root.
+Legacy C++ plotting helpers and old result folders are not tracked in this repo.
 
 - Run the Darcy example (with convergence plots):
   - `./venv/bin/python examples/uq_adf_darcy_2d.py`
@@ -8,6 +9,7 @@ and is exercised by the tests/examples in the repo root.
 - Run tests:
   - `./venv/bin/python -m pytest -q tests`
   - Slow Darcy reference: `RUN_SLOW_DARCY=1 ./venv/bin/python -m pytest -q tests/test_uq_adf_skfem.py`
+  - TorchTT algorithms: `./venv/bin/python -m pytest -q tests/test_torchtt_algorithms.py`
 
 #NOTES
 - cookie4/ord7_ortho/info.json ist nicht ord7, sondern ord13

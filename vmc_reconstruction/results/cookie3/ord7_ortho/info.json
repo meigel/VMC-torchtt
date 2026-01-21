@@ -1,7 +1,0 @@
-{
-    "sample size": 10000,
-    "tolerance": 1e-8,
-    "maximum number of iterations": 1000,
-    "basis dimension": 7,
-    "orthogonalization": true
-}

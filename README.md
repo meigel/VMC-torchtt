@@ -21,10 +21,14 @@ submodule.
   - `./venv/bin/python examples/uq_adf_plots.py`
 
 Plots are written to `examples/plots/` (gitignored).
+Experiment outputs are not tracked; keep large results outside the repo or in ignored paths.
 
 ## Tests
 - `./venv/bin/python -m pytest -q tests`
 
-Note: `tests/test_uq_adf_skfem.py` includes a fast default test and a slow
-fine-mesh Darcy reference test. Run the slow variant with
-`RUN_SLOW_DARCY=1 ./venv/bin/python -m pytest -q tests/test_uq_adf_skfem.py`.
+Notes:
+- `tests/test_uq_adf_skfem.py` includes a fast default test and a slow
+  fine-mesh Darcy reference test. Run the slow variant with
+  `RUN_SLOW_DARCY=1 ./venv/bin/python -m pytest -q tests/test_uq_adf_skfem.py`.
+- `tests/test_torchtt_algorithms.py` covers AMEn, DMRG, DMRG cross, and QTT
+  round-trip sanity checks.
