@@ -5,3 +5,5 @@ __pycache__/
 examples/plots/
 vmc_reconstruction/results/
 vmc_reconstruction/plots/
+tenpy/
+tenpy

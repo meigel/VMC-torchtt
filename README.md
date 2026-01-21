@@ -32,3 +32,5 @@ Notes:
   `RUN_SLOW_DARCY=1 ./venv/bin/python -m pytest -q tests/test_uq_adf_skfem.py`.
 - `tests/test_torchtt_algorithms.py` covers AMEn, DMRG, DMRG cross, and QTT
   round-trip sanity checks.
+- `tests/test_quantum.py` exercises lightweight MPS/MPO helpers in
+  `torchtt.quantum` (two-site DMRG and TDVP with dense or Krylov local solves).
